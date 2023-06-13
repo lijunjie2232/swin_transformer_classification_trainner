@@ -84,12 +84,6 @@ def parse_option():
         type=str,
         help="resume from an output dir or a model weight file"
     )
-    parser.add_argument(
-        "--save_step",
-        type=int,
-        default=5,
-        help="resume from an output dir or a model weight file"
-    )
     args, unparsed = parser.parse_known_args()
 
     return args
@@ -173,7 +167,6 @@ def saveCheckpoint(
     best1=False,
     best5=False,
     idx=-1,
-    ignore_step:bool=False
 ):
     save_state = {
         # "model": model,
@@ -204,7 +197,7 @@ def saveCheckpoint(
     #     if epoch % CHK_SAVE_STEP == 0 or epoch == TRAIN_EPOCHS:
     #         torch.save(save_state, saveEpochPath)
     saveEpochPath = os.path.join(path, f"ckpt_epoch_{epoch}.pth")
-    if epoch % CHK_SAVE_STEP == CHK_SAVE_STEP-1 and idx == -1 or ignore_step:
+    if epoch % CHK_SAVE_STEP == CHK_SAVE_STEP-1 and idx == -1:
         torch.save(save_state, saveEpochPath)
         print('saved to: ', saveEpochPath)
     # accelerator.save(save_state, saveEpochPath)
@@ -241,8 +234,9 @@ def loadCheckpoint(chkPath: str):
         "epoch",
         "idx",
     ]
-    chk = torch.load(filename=chkPath)
+    chk = torch.load(chkPath)
     chk["model_state"] = correctWeightsForAcc(chk["model_state"])
+    logger.info(chk['epoch'])
     return chk
     # chkValues = []
     # modelStatusTypeName = 'OrderedDict'
@@ -304,9 +298,9 @@ def main(ckpPath, trainDataloader, valDataloader, logger, savePath, resumePath=N
         logger.info("cheaking resume path ...")
         if os.path.isdir(resumePath):
             if os.path.isfile(os.path.join(resumePath, 'chk', '_latest.pth')):
-                path = os.path.join(resumePath, 'chk', '_latest.pth')
+                resumePath = os.path.join(resumePath, 'chk', '_latest.pth')
             elif os.path.isfile(os.path.join(resumePath, '_latest.pth')):
-                path = os.path.join(resumePath, '_latest.pth')
+                resumePath = os.path.join(resumePath, '_latest.pth')
         elif os.path.splitext(resumePath)[-1] == '.pth' and os.path.isfile(resumePath):
             pass
         else:
@@ -323,7 +317,7 @@ def main(ckpPath, trainDataloader, valDataloader, logger, savePath, resumePath=N
         '''
         logger.info('loding checkpoint from %s' % resumePath)
         chkValues = loadCheckpoint(resumePath)
-        model.load_static_dict(chkValues['model_state'])
+        model.load_state_dict(chkValues['model_state'])
         lr_scheduler.load_state_dict(chkValues['lr_scheduler_state'])
         optimizer.load_state_dict(chkValues['optimizer_state'])
         best['acc1'] = chkValues['max_accuracy1']
@@ -621,7 +615,7 @@ if __name__ == "__main__":
     TRAIN_WARMUP_EPOCHS = 2
     TRAIN_WARMUP_LR = 5e-7
     TRAIN_WEIGHT_DECAY = 0.05
-    TRAIN_BASE_LR = 5e-5
+    TRAIN_BASE_LR = 1e-5
     TRAIN_MIN_LR = 1e-7
     TRAIN_OPTIMIZER_BETAS = (0.9, 0.999)
     TRAIN_LR_SCHEDULER_DECAY_EPOCHS = int(30)
@@ -654,7 +648,7 @@ if __name__ == "__main__":
     # MODEL_SWINV2_APE = False
     # MODEL_SWINV2_PATCH_NORM = True
 
-    CHK_SAVE_STEP = int(1)
+    CHK_SAVE_STEP = int(5)
     NUM_WORKERS = int(5)
 
     args = parse_option()
@@ -669,7 +663,7 @@ if __name__ == "__main__":
         # for i in args.devices.split(','):
         #     if i:
         #         TRAIN_ACCUMULATION_STEPS += 1
-    DATA_DIR = './dataset'
+
     if args.batch_size:
         DATA_BATCH_SIZE = args.batch_size
     if args.train_epochs:
@@ -684,8 +678,6 @@ if __name__ == "__main__":
         OUTPUT_DIR = args.output_dir
     if args.resume_from:
         TRAIN_RESUME_FROM = args.resume_from
-    if args.save_step:
-        CHK_SAVE_STEP = args.save_step
     DATA_INDEX_UPDATE = args.update_data_index
 
     print(args)
@@ -733,8 +725,11 @@ if __name__ == "__main__":
     with open(os.path.join(DATA_DIR, 'config.json'), "w") as f:
         json.dump(config, f)
 
+    logger.info('loading imageProcessor ...')
     imageProcessor = AutoImageProcessor.from_pretrained(MODEL_DIR)
+    logger.info('imageProcessor loaded .')
 
+    logger.info('loading dataset ...')
     trainDataset = MyDataset(
         dataPath, dataType="train", updateIndex=DATA_INDEX_UPDATE, imageProcessor=imageProcessor
     )
@@ -773,13 +768,14 @@ if __name__ == "__main__":
     # )
     valDataloader = DataLoader(
         dataset=valDataset,
-        batch_size=1,
-        num_workers=1,
+        batch_size=DATA_BATCH_SIZE,
+        num_workers=min(DATA_BATCH_SIZE*8, NUM_WORKERS),
         pin_memory=True,
         drop_last=True,
         # sampler=valSampler,
         shuffle=True
     )
+    logger.info('load dataset successfully .')
 
     main(
         ckpPath=MODEL_DIR,

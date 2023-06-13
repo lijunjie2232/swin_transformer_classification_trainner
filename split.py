@@ -1,12 +1,34 @@
 import os
 import pandas as pd
+import numpy as np
 import random
 from tqdm import tqdm
 import argparse
+from multiprocessing import Pool
 
 TAGS = ['tent', 'car', 'truck', 'human', 'bridge', 'bg']
+TAG2LABEL = {TAGS[i]:i for i in range(len(TAGS))}
+DATA_PATH = './'
+TMP_DATAFRAME = None
 
-def makeDataset(path='./', train:int=8, test:int=2, val:int=0, makeIndex=False):
+def make_row(imgPath, row):
+    return (row[1], os.path.abspath(os.path.join(imgPath, row[0], row[1])), TAG2LABEL[row[0]])
+# def make_row(imgPath, row_num, tmp_df):
+#     row = tmp_df.iloc[row_num]
+#     return (row[1], os.path.abspath(os.path.join(imgPath, row[0], row[1])), TAG2LABEL[row[0]])
+
+def make_index(tmp_df, imgPath, p=4):
+    print('processes: ', p)
+    pool = Pool(p)
+    # global TMP_DATAFRAME
+    # TMP_DATAFRAME = tmp_df
+    # tmp_df = np.array(tmp_df).tolist()
+    tmp_data = pool.starmap(make_row, [(imgPath, row) for _, row in tmp_df.iterrows()])
+    # tmp_data = pool.starmap(make_row, [(imgPath, row_num, tmp_df) for row_num in range(0, tmp_df.shape[0])])
+    # tmp_data = pool.starmap(make_row, [(imgPath, row) for row in tmp_df])
+    return pd.DataFrame(data=tmp_data, columns = ['file_name', 'file_path', 'label'])
+
+def makeDataset(path='./', train:int=8, test:int=2, val:int=0, makeIndex=False, p=4):
     if not os.path.isdir(os.path.join(path, 'images')):
         print("invalid path")
     imgPath = os.path.join(path, 'images')
@@ -22,7 +44,6 @@ def makeDataset(path='./', train:int=8, test:int=2, val:int=0, makeIndex=False):
     if len(dirSelection) == 0:
         print('invalid dataset split setting')
         return
-    tag2label = {TAGS[i]:i for i in range(len(TAGS))}
     dataSet = []
     trainSet = []
     testSet = []
@@ -55,30 +76,24 @@ def makeDataset(path='./', train:int=8, test:int=2, val:int=0, makeIndex=False):
         tmp_df = pd.DataFrame(data=trainSet, columns = ['tag', 'file_name'])
         tmp_df.to_csv(os.path.join(path, 'train.csv'), index=False)
         if makeIndex:
-            tmp_data = []
-            for index, row in tmp_df.iterrows():
-                tmp_data.append((row[1], os.path.abspath(os.path.join(imgPath, row[0], row[1])), tag2label[row[0]]))
-            tmp_df = pd.DataFrame(data=tmp_data, columns = ['file_name', 'file_path', 'label'])
+            print('making index of train ...')
+            tmp_df = make_index(tmp_df, imgPath, p)
             tmp_df.to_csv(os.path.join(path, 'train_metadata.csv'), index=False)
     if testSet:
         print('test: %d'%len(testSet))
         tmp_df = pd.DataFrame(data=testSet, columns = ['tag', 'file_name'])
         tmp_df.to_csv(os.path.join(path, 'test.csv'), index=False)
         if makeIndex:
-            tmp_data = []
-            for index, row in tmp_df.iterrows():
-                tmp_data.append((row[1], os.path.abspath(os.path.join(imgPath, row[0], row[1])), tag2label[row[0]]))
-            tmp_df = pd.DataFrame(data=tmp_data, columns = ['file_name', 'file_path', 'label'])
+            print('making index of test ...')
+            tmp_df = make_index(tmp_df, imgPath, p)
             tmp_df.to_csv(os.path.join(path, 'test_metadata.csv'), index=False)
     if valSet:
         print('val: %d'%len(valSet))
         tmp_df = pd.DataFrame(data=valSet, columns = ['tag', 'file_name'])
         tmp_df.to_csv(os.path.join(path, 'val.csv'), index=False)
         if makeIndex:
-            tmp_data = []
-            for index, row in tmp_df.iterrows():
-                tmp_data.append((row[1], os.path.abspath(os.path.join(imgPath, row[0], row[1])), tag2label[row[0]]))
-            tmp_df = pd.DataFrame(data=tmp_data, columns = ['file_name', 'file_path', 'label'])
+            print('making index of val ...')
+            tmp_df = make_index(tmp_df, imgPath, p)
             tmp_df.to_csv(os.path.join(path, 'val_metadata.csv'), index=False)
 
 
@@ -89,6 +104,8 @@ if __name__ == '__main__':
     parser.add_argument('--test', type=int, default=2, help="test のパ＿セント")
     parser.add_argument('--val', type=int, default=0, help="val のパーセント")
     parser.add_argument('--make_index', default=False, action='store_true', help="make index of absolute path for training")
+    parser.add_argument('--p', type=int, default=4, help="parr_num")
     args = parser.parse_args()
-    makeDataset(args.data_path, args.train, args.test, args.val, args.make_index)
-    
+    DATA_PATH = args.data_path
+    makeDataset(args.data_path, args.train, args.test, args.val, args.make_index, args.p)
+
