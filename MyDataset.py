@@ -7,15 +7,17 @@ from utils import readImage
 import numpy as np
 
 class MyDataset(Dataset):
-    def __init__(self, datasetPath, dataType='', fileNameForm=None, imageProcessor=None, updateIndex=False, tag2label:map=None, tags:list=None, saveConfig=False):
+    def __init__(self, datasetPath, dataType='', fileNameForm=None, imageProcessor=None, updateIndex=False, tag2label:map=None, tags:list=None, saveConfig=False, reSuffle=False):
         """
         dataType: ['train', 'val', 'test']
         """
-        if dataType:
-            assert dataType in ['train', 'val', 'test']
-            self.imageDataPath = os.path.join(datasetPath, dataType, 'images')
-        else:
-            self.imageDataPath = os.path.join(datasetPath, 'images')
+        # if dataType:
+        #     assert dataType in ['train', 'val', 'test']
+        #     self.imageDataPath = os.path.join(datasetPath, dataType, 'images')
+        # else:
+        #     self.imageDataPath = os.path.join(datasetPath, 'images')
+        self.path = datasetPath
+        self.imageDataPath = os.path.join(datasetPath, 'images')
         assert os.path.isdir(self.imageDataPath)
         
         self.imageProcessor = imageProcessor
@@ -34,14 +36,14 @@ class MyDataset(Dataset):
         
         self.fileNameForm = fileNameForm
         if updateIndex:
-            self.dataIndex = self.makeIndexFile(self.imageDataPath)  # update data index
+            self.dataIndex = self.makeIndexFile(self.path, self.dataType)  # update data index
         else:
             # assert os.path.isfile(os.path.join(self.imageDataPath, 'index.csv'))
             # self.dataIndex = pd.read_csv(os.path.join(self.imageDataPath, 'index.csv')) # read data index file
-            if  os.path.isfile(os.path.join(self.imageDataPath, 'metadata.csv')):
-                self.dataIndex = pd.read_csv(os.path.join(self.imageDataPath, 'metadata.csv')) # read data index file
+            if  os.path.isfile(os.path.join(self.path, self.dataType + '_metadata.csv')):
+                self.dataIndex = pd.read_csv(os.path.join(self.path, self.dataType + '_metadata.csv')) # read data index file
             else:
-                self.dataIndex = self.makeIndexFile(self.imageDataPath)  # update data index
+                self.dataIndex = self.makeIndexFile(self.path, self.dataType)  # update data index
 
             
             
@@ -90,8 +92,9 @@ class MyDataset(Dataset):
 #         return df
 
     # def makeMetadataFile(self, path:str):
-    def makeIndexFile(self, path:str):
+    def makeIndexFile(self, path:str, dataType:str='train'):
         data = []
+        imgPath = os.path.join(path, 'images')
         # fineNamePattern = re.compile(self.fileNameForm)
         
         # os.system('rm -rf %s'%os.path.join(path,'.ipynb_checkpoints'))
@@ -101,16 +104,25 @@ class MyDataset(Dataset):
             # if result:
             #     # data.append((fileName, result[0][0],  result[0][1]))
             #     data.append((fileName, self.tag2label[result[0][1]]))
-        for dirName, _, fileNames in os.walk(os.path.join(path)):
-            print(dirName)
-            tag = os.path.split(dirName)[-1]
-            if tag == '.ipynb_checkpoints':
-                continue
-            fLoop = tqdm(fileNames, desc=dirName)
-            for fileName in fLoop:
-                if os.path.splitext(fileName)[-1].lower() in self.sufList:
-                    data.append((fileName, os.path.join(dirName, fileName), self.tag2label[tag]))
+        # for dirName, _, fileNames in os.walk(os.path.join(path)):
+        #     print(dirName)
+        #     tag = os.path.split(dirName)[-1]
+        #     if tag == '.ipynb_checkpoints':
+        #         continue
+        #     fLoop = tqdm(fileNames, desc=dirName)
+        #     for fileName in fLoop:
+        #         if os.path.splitext(fileName)[-1].lower() in self.sufList:
+        #             data.append((fileName, os.path.join(dirName, fileName), self.tag2label[tag]))
+        
+        # df = pd.DataFrame(data=data, columns = ['file_name', 'file_path', 'label'])
+        # df.to_csv(os.path.join(path, 'metadata.csv'), index=False)
+        # return df
+        data_df = pd.read_csv(os.path.join(path, dataType+'.csv'))
+        print('update index of ', dataType, ' splits')
+        for index, row in data_df.iterrows():
+            data.append((row[1], os.path.abspath(os.path.join(imgPath, row[0], row[1])), self.tag2label[row[0]]))
         
         df = pd.DataFrame(data=data, columns = ['file_name', 'file_path', 'label'])
-        df.to_csv(os.path.join(path, 'metadata.csv'), index=False)
+        
+        df.to_csv(os.path.join(path, dataType + '_metadata.csv'), index=False)
         return df

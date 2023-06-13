@@ -68,8 +68,9 @@ def parse_option():
     )
     parser.add_argument(
         "--update_data_index",
-        type=bool,
+        # type=bool,
         default=False,
+        action='store_true',
         help="update dataset index file"
     )
     parser.add_argument(
@@ -77,6 +78,17 @@ def parse_option():
         type=str,
         default='./runs/swinS',
         help="path of output"
+    )
+    parser.add_argument(
+        "--resume_from",
+        type=str,
+        help="resume from an output dir or a model weight file"
+    )
+    parser.add_argument(
+        "--save_step",
+        type=int,
+        default=5,
+        help="resume from an output dir or a model weight file"
     )
     args, unparsed = parser.parse_known_args()
 
@@ -161,13 +173,14 @@ def saveCheckpoint(
     best1=False,
     best5=False,
     idx=-1,
+    ignore_step:bool=False
 ):
     save_state = {
-        #"model": model,
+        # "model": model,
         "model_state": model.state_dict(),
-        #"optimizer": optimizer,
+        # "optimizer": optimizer,
         "optimizer_state": optimizer.state_dict(),
-        #"lr_scheduler": lr_scheduler,
+        # "lr_scheduler": lr_scheduler,
         "lr_scheduler_state": lr_scheduler.state_dict(),
         "max_accuracy1": max_accuracy1,
         "max_accuracy5": max_accuracy5,
@@ -191,34 +204,65 @@ def saveCheckpoint(
     #     if epoch % CHK_SAVE_STEP == 0 or epoch == TRAIN_EPOCHS:
     #         torch.save(save_state, saveEpochPath)
     saveEpochPath = os.path.join(path, f"ckpt_epoch_{epoch}.pth")
-    if epoch % CHK_SAVE_STEP == CHK_SAVE_STEP-1 and idx == -1:
+    if epoch % CHK_SAVE_STEP == CHK_SAVE_STEP-1 and idx == -1 or ignore_step:
         torch.save(save_state, saveEpochPath)
         print('saved to: ', saveEpochPath)
-    #accelerator.save(save_state, saveEpochPath)
+    # accelerator.save(save_state, saveEpochPath)
     if latest:
         torch.save(save_state, os.path.join(path, f"_latest.pth"))
-        #accelerator.save(save_state, os.path.join(path, f"_latest.pth"))
+        # accelerator.save(save_state, os.path.join(path, f"_latest.pth"))
         print('saved to: ', os.path.join(path, f"_latest.pth"))
     if best1:
         torch.save(save_state, os.path.join(path, f"_best.pth"))
-        #accelerator.save(save_state, os.path.join(path, f"_best.pth"))
+        # accelerator.save(save_state, os.path.join(path, f"_best.pth"))
         print('saved to: ', os.path.join(path, f"_best.pth"))
     if best5:
         torch.save(save_state, os.path.join(path, f"_best5.pth"))
-        #accelerator.save(save_state, os.path.join(path, f"_best5.pth"))
+        # accelerator.save(save_state, os.path.join(path, f"_best5.pth"))
         print('saved to: ', os.path.join(path, f"_best5.pth"))
     logger.info(f"{path} saved !!!")
 
 
-def main(ckpPath, trainDataloader, valDataloader, logger, savePath):
-    
+def correctWeightsForAcc(weights):
+    correctWeights = {}
+    for k, v in weights.items():
+        new_k = k.replace('module.', '') if k.startswith('module.') else k
+        correctWeights[new_k] = v
+    return correctWeights
+
+
+def loadCheckpoint(chkPath: str):
+    chkKeys = [
+        "model_state",
+        "optimizer_state",
+        "lr_scheduler_state",
+        "max_accuracy1",
+        "max_accuracy5",
+        "epoch",
+        "idx",
+    ]
+    chk = torch.load(filename=chkPath)
+    chk["model_state"] = correctWeightsForAcc(chk["model_state"])
+    return chk
+    # chkValues = []
+    # modelStatusTypeName = 'OrderedDict'
+    # for k in chkKeys:
+    #     v = chk[k]
+    #     if type(v).__name__ == modelStatusTypeName:
+    #         v = correctWeightsForAcc(v)
+    #     chkValues.append(v)
+    # return chkValues
+
+
+def main(ckpPath, trainDataloader, valDataloader, logger, savePath, resumePath=None):
+
     model = AutoModelForImageClassification.from_pretrained(
         ckpPath,
         # num_labels=32,
         # id2label=tag2label,
         # label2id=label2tag
     )
-    
+
     if AUG_MIXUP > 0.0:
         # smoothing is handled with mixup label transform
         criterion = SoftTargetCrossEntropy()
@@ -249,7 +293,49 @@ def main(ckpPath, trainDataloader, valDataloader, logger, savePath):
         warmup_t=warmup_steps,
         t_in_epochs=False,
     )
-    
+    best = {
+        "acc1": 0,
+        "acc5": 0,
+    }
+    epoch = TRAIN_START_EPOCH
+    idx_o = 0
+
+    if resumePath:
+        logger.info("cheaking resume path ...")
+        if os.path.isdir(resumePath):
+            if os.path.isfile(os.path.join(resumePath, 'chk', '_latest.pth')):
+                path = os.path.join(resumePath, 'chk', '_latest.pth')
+            elif os.path.isfile(os.path.join(resumePath, '_latest.pth')):
+                path = os.path.join(resumePath, '_latest.pth')
+        elif os.path.splitext(resumePath)[-1] == '.pth' and os.path.isfile(resumePath):
+            pass
+        else:
+            logger.info("can not find model weight in specified path")
+            exit('-1')
+        '''
+        "model_state",
+        "optimizer_state",
+        "lr_scheduler_state",
+        "max_accuracy1",
+        "max_accuracy5",
+        "epoch",
+        "idx",
+        '''
+        logger.info('loding checkpoint from %s' % resumePath)
+        chkValues = loadCheckpoint(resumePath)
+        model.load_static_dict(chkValues['model_state'])
+        lr_scheduler.load_state_dict(chkValues['lr_scheduler_state'])
+        optimizer.load_state_dict(chkValues['optimizer_state'])
+        best['acc1'] = chkValues['max_accuracy1']
+        best['acc5'] = chkValues['max_accuracy5']
+        epoch = chkValues['epoch']
+        idx_o = chkValues['idx']
+        if idx_o == -1:
+            idx_o = 0
+            epoch += 1
+        logger.info('checkpoint successfully loaded.')
+        logger.info("epoch: %d, idx: %d" % (epoch, idx_o))
+
     # loss_scaler=loss_scaler
 
     # modelIsCuda = next(model.parameters()).is_cuda
@@ -269,16 +355,13 @@ def main(ckpPath, trainDataloader, valDataloader, logger, savePath):
     logger.info("Start training")
     start_time = time.time()
     # TRAIN_EPOCHS=20
-    best = {
-        "acc1": 0,
-        "acc5": 0,
-    }        
+
     accelerator = Accelerator()
     rank = accelerator.process_index
     model, optimizer, trainDataloader, valDataloader, lr_scheduler = accelerator.prepare(
         model, optimizer, trainDataloader, valDataloader, lr_scheduler
     )
-    for epoch in range(TRAIN_START_EPOCH, TRAIN_EPOCHS):
+    while epoch < TRAIN_EPOCHS:
         # train_one_epoch(model, LOSS_FUNC, trainDataloader, optimizer, lr_scheduler, loss_scaler, epoch)
 
         data_loader = trainDataloader
@@ -306,6 +389,9 @@ def main(ckpPath, trainDataloader, valDataloader, logger, savePath):
             total=len(data_loader), desc=f"Train epoch[{epoch}/{TRAIN_EPOCHS}]"
         )
         for idx, (samples, targets) in enumerate(data_loader):
+            if idx_o > 0:
+                idx = idx_o
+                continue
             if iscuda:
                 samples = samples.cuda(non_blocking=True)
                 targets = targets.cuda(non_blocking=True)
@@ -319,7 +405,8 @@ def main(ckpPath, trainDataloader, valDataloader, logger, savePath):
             loss_meter.update(loss.item(), targets.size(0))
             accelerator.backward(loss)
             optimizer.step()
-            lr_scheduler.step((epoch * num_steps + idx) // TRAIN_ACCUMULATION_STEPS)
+            lr_scheduler.step((epoch * num_steps + idx) //
+                              TRAIN_ACCUMULATION_STEPS)
             # loss = loss / TRAIN_ACCUMULATION_STEPS
             # is_second_order = hasattr(optimizer, 'is_second_order') and optimizer.is_second_order
             # grad_norm = loss_scaler(loss, optimizer, clip_grad=TRAIN_CLIP_GRAD,
@@ -472,7 +559,8 @@ def main(ckpPath, trainDataloader, valDataloader, logger, savePath):
             f" * Acc@1 {acc1_meter.avg:.3f}% | Acc@5 {acc5_meter.avg:.3f}% | Loss {loss_meter.avg:.4f}"
         )
         valLoop.close()
-        logger.info(f" * Acc@1 {acc1_meter.avg:.3f} Acc@5 {acc5_meter.avg:.3f}")
+        logger.info(
+            f" * Acc@1 {acc1_meter.avg:.3f} Acc@5 {acc5_meter.avg:.3f}")
 
         acc1, acc5, loss = acc1_meter.avg, acc5_meter.avg, loss_meter.avg
         logger.info(
@@ -489,7 +577,8 @@ def main(ckpPath, trainDataloader, valDataloader, logger, savePath):
             best5 == True
 
         logger.info(
-            "Max acc1: %.2f%% | Max acc1: %.2f%%" % (best["acc1"], best["acc5"])
+            "Max acc1: %.2f%% | Max acc1: %.2f%%" % (
+                best["acc1"], best["acc5"])
         )
 
         saveCheckpoint(
@@ -507,6 +596,8 @@ def main(ckpPath, trainDataloader, valDataloader, logger, savePath):
             best5=best5,
         )
 
+        epoch += 1
+
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     logger.info("Training time {}".format(total_time_str))
@@ -521,7 +612,7 @@ if __name__ == "__main__":
     AUG_MIXUP = 0.8
     MODEL_LABEL_SMOOTHING = 0.1
     WEIGHT_DECAY: 1e-8
-    
+
     DATA_BATCH_SIZE = int(32)
     DATA_PATH = './data/mydataset/dataset_811'
 
@@ -530,12 +621,13 @@ if __name__ == "__main__":
     TRAIN_WARMUP_EPOCHS = 2
     TRAIN_WARMUP_LR = 5e-7
     TRAIN_WEIGHT_DECAY = 0.05
-    TRAIN_BASE_LR = 1e-5
+    TRAIN_BASE_LR = 5e-5
     TRAIN_MIN_LR = 1e-7
     TRAIN_OPTIMIZER_BETAS = (0.9, 0.999)
     TRAIN_LR_SCHEDULER_DECAY_EPOCHS = int(30)
     TRAIN_LR_SCHEDULER_MULTISTEPS = []
     TRAIN_OPTIMIZER_EPS = 1e-8
+    TRAIN_RESUME_FROM = None
 
     TEST_SHUFFLE = False
 
@@ -548,22 +640,22 @@ if __name__ == "__main__":
 
     DATA_IMG_SIZE = 256
 
-    #MODEL_SWINV2_PATCH_SIZE = 4
-    #MODEL_SWINV2_IN_CHANS = 3
+    # MODEL_SWINV2_PATCH_SIZE = 4
+    # MODEL_SWINV2_IN_CHANS = 3
 
-    #MODEL_SWINV2_EMBED_DIM = 192
-    #MODEL_SWINV2_DEPTHS = [2, 2, 18, 2]
-    #MODEL_SWINV2_NUM_HEADS = [6, 12, 24, 48]
+    # MODEL_SWINV2_EMBED_DIM = 192
+    # MODEL_SWINV2_DEPTHS = [2, 2, 18, 2]
+    # MODEL_SWINV2_NUM_HEADS = [6, 12, 24, 48]
     MODEL_SWINV2_WINDOW_SIZE = 8
-    #MODEL_SWINV2_PRETRAINED_WINDOW_SIZES = [12, 12, 12, 6]
+    # MODEL_SWINV2_PRETRAINED_WINDOW_SIZES = [12, 12, 12, 6]
 
-    #MODEL_SWINV2_MLP_RATIO = 4.0
-    #MODEL_SWINV2_QKV_BIAS = True
-    #MODEL_SWINV2_APE = False
-    #MODEL_SWINV2_PATCH_NORM = True
+    # MODEL_SWINV2_MLP_RATIO = 4.0
+    # MODEL_SWINV2_QKV_BIAS = True
+    # MODEL_SWINV2_APE = False
+    # MODEL_SWINV2_PATCH_NORM = True
 
-    CHK_SAVE_STEP = int(5)
-    NUM_WORKERS=int(5)
+    CHK_SAVE_STEP = int(1)
+    NUM_WORKERS = int(5)
 
     args = parse_option()
     # if args.devices=='all':
@@ -577,7 +669,7 @@ if __name__ == "__main__":
         # for i in args.devices.split(','):
         #     if i:
         #         TRAIN_ACCUMULATION_STEPS += 1
-
+    DATA_DIR = './dataset'
     if args.batch_size:
         DATA_BATCH_SIZE = args.batch_size
     if args.train_epochs:
@@ -590,7 +682,10 @@ if __name__ == "__main__":
         DATA_DIR = args.data_dir
     if args.output_dir:
         OUTPUT_DIR = args.output_dir
-    #if args.update_data_index is not None:
+    if args.resume_from:
+        TRAIN_RESUME_FROM = args.resume_from
+    if args.save_step:
+        CHK_SAVE_STEP = args.save_step
     DATA_INDEX_UPDATE = args.update_data_index
 
     print(args)
@@ -611,7 +706,7 @@ if __name__ == "__main__":
     outputPath = os.path.join(OUTPUT_DIR, runName)
     logPath = os.path.join(outputPath, 'log')
     chkPath = os.path.join(outputPath, 'chk')
-    #if not os.path.exists(chkPath):
+    # if not os.path.exists(chkPath):
     #    try:
     #        os.makedirs(chkPath)
     #    except OSError as exc:
@@ -621,7 +716,8 @@ if __name__ == "__main__":
     pathChecker(chkPath)
 
     # 设置log保存
-    fh = logging.FileHandler(os.path.join(logPath, 'logs.log'), encoding="utf8")
+    fh = logging.FileHandler(os.path.join(
+        logPath, 'logs.log'), encoding="utf8")
     fh.setFormatter(formatter)
     logger.addHandler(fh)
 
@@ -631,9 +727,9 @@ if __name__ == "__main__":
     tags = ["tent", "car", "truck", "human", "bridge", "bg"]
     tag2label = {tags[i]: i for i in range(len(tags))}
     label2tag = {i: tags[i] for i in range(len(tags))}
-    
+
     config = {"tag2label": tag2label, "label2tag": label2tag}
-    config["split"] = {"train": 8, "test":2}
+    config["split"] = {"train": 8, "test": 2}
     with open(os.path.join(DATA_DIR, 'config.json'), "w") as f:
         json.dump(config, f)
 
@@ -691,4 +787,5 @@ if __name__ == "__main__":
         valDataloader=valDataloader,
         logger=logger,
         savePath=chkPath,
+        resumePath=TRAIN_RESUME_FROM
     )
