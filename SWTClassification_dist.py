@@ -84,7 +84,7 @@ MODEL_SWINV2_PATCH_NORM = True
 
 SAVE_FREQ = int(1)
 AUTO_SAVE_SECOND = 1800
-NUM_WORKERS = int(5)
+NUM_WORKERS = int(2)
 TRAIN_ACCUMULATION_STEPS = 1
 
 
@@ -457,21 +457,19 @@ def main(args, logger):
     trainDataloader = DataLoader(
         dataset=trainDataset,
         batch_size=DATA_BATCH_SIZE,
-        num_workers=0,
+        num_workers=NUM_WORKERS,
         pin_memory=True,
         drop_last=True,
         sampler=trainSampler,
-        shuffle=False
     )
 
     testDataloader = DataLoader(
         dataset=testDataset,
         batch_size=DATA_BATCH_SIZE,
-        num_workers=0,
+        num_workers=NUM_WORKERS,
         pin_memory=True,
         drop_last=True,
         sampler=testSampler,
-        shuffle=False
     )
 
     model = AutoModelForImageClassification.from_pretrained(
