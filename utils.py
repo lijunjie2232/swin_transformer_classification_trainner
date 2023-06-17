@@ -14,7 +14,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import numpy as np
 
-
 def load_checkpoint(config, model, optimizer, lr_scheduler, loss_scaler, logger):
     logger.info(f"==============> Resuming form {config.MODEL.RESUME}....................")
     if config.MODEL.RESUME.startswith('https'):
@@ -70,7 +69,7 @@ def pathChecker(path, createDir=True):
         if os.path.exists(pre):
             return True
         if createDir:
-            os.makedirs(pre)
+            os.makedirs(pre, exist_ok=True)
             return True
     else: # path is a file name
         if os.path.exists(path):
@@ -259,3 +258,26 @@ class NativeScalerWithGradNormCount:
 
     def load_state_dict(self, state_dict):
         self._scaler.load_state_dict(state_dict)
+
+
+
+def getLogger(logPath, printLog=True, saveLog=True):
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)  # 设置打印级别
+    formatter = logging.Formatter(
+        "%(asctime)s %(filename)s %(funcName)s [line:%(lineno)d] %(levelname)s %(message)s"
+    )
+    
+    if saveLog:
+        # 设置log保存
+        fh = logging.FileHandler(os.path.join(logPath, 'logs.log'), encoding="utf8")
+        fh.setFormatter(formatter)
+        logger.addHandler(fh)
+    
+    if printLog:
+        # 设置屏幕打印的格式
+        sh = logging.StreamHandler()
+        sh.setFormatter(formatter)
+        logger.addHandler(sh)
+    
+    return logger

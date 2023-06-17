@@ -84,6 +84,12 @@ def parse_option():
         type=str,
         help="resume from an output dir or a model weight file"
     )
+    parser.add_argument(
+        "--save_step",
+        type=int,
+        default=5,
+        help="resume from an output dir or a model weight file"
+    )
     args, unparsed = parser.parse_known_args()
 
     return args
@@ -167,6 +173,7 @@ def saveCheckpoint(
     best1=False,
     best5=False,
     idx=-1,
+    ignore_step:bool=False
 ):
     save_state = {
         # "model": model,
@@ -197,7 +204,7 @@ def saveCheckpoint(
     #     if epoch % CHK_SAVE_STEP == 0 or epoch == TRAIN_EPOCHS:
     #         torch.save(save_state, saveEpochPath)
     saveEpochPath = os.path.join(path, f"ckpt_epoch_{epoch}.pth")
-    if epoch % CHK_SAVE_STEP == CHK_SAVE_STEP-1 and idx == -1:
+    if epoch % CHK_SAVE_STEP == CHK_SAVE_STEP-1 and idx == -1 or ignore_step:
         torch.save(save_state, saveEpochPath)
         print('saved to: ', saveEpochPath)
     # accelerator.save(save_state, saveEpochPath)
@@ -234,9 +241,8 @@ def loadCheckpoint(chkPath: str):
         "epoch",
         "idx",
     ]
-    chk = torch.load(chkPath)
+    chk = torch.load(chkPath, map_location='cpu')
     chk["model_state"] = correctWeightsForAcc(chk["model_state"])
-    logger.info(chk['epoch'])
     return chk
     # chkValues = []
     # modelStatusTypeName = 'OrderedDict'
@@ -249,7 +255,11 @@ def loadCheckpoint(chkPath: str):
 
 
 def main(ckpPath, trainDataloader, valDataloader, logger, savePath, resumePath=None):
-
+    accelerator = Accelerator()
+    rank = accelerator.process_index
+    device = torch.device(rank)
+    print(device)
+    
     model = AutoModelForImageClassification.from_pretrained(
         ckpPath,
         # num_labels=32,
@@ -293,6 +303,7 @@ def main(ckpPath, trainDataloader, valDataloader, logger, savePath, resumePath=N
     }
     epoch = TRAIN_START_EPOCH
     idx_o = 0
+    
 
     if resumePath:
         logger.info("cheaking resume path ...")
@@ -329,6 +340,7 @@ def main(ckpPath, trainDataloader, valDataloader, logger, savePath, resumePath=N
             epoch += 1
         logger.info('checkpoint successfully loaded.')
         logger.info("epoch: %d, idx: %d" % (epoch, idx_o))
+    model = model.to(device)
 
     # loss_scaler=loss_scaler
 
@@ -350,8 +362,11 @@ def main(ckpPath, trainDataloader, valDataloader, logger, savePath, resumePath=N
     start_time = time.time()
     # TRAIN_EPOCHS=20
 
-    accelerator = Accelerator()
-    rank = accelerator.process_index
+    iscuda = True
+    # if iscuda:
+    #     device = torch.device(rank)
+    # else:
+    #     device = torch.device('cpu')
     model, optimizer, trainDataloader, valDataloader, lr_scheduler = accelerator.prepare(
         model, optimizer, trainDataloader, valDataloader, lr_scheduler
     )
@@ -359,10 +374,10 @@ def main(ckpPath, trainDataloader, valDataloader, logger, savePath, resumePath=N
         # train_one_epoch(model, LOSS_FUNC, trainDataloader, optimizer, lr_scheduler, loss_scaler, epoch)
 
         data_loader = trainDataloader
-        iscuda = False
-        if device.type == "cuda":
-            model = model.cuda()
-            iscuda = True
+        # iscuda = False
+        # if device.type == "cuda":
+        #     model = model.cuda()
+        #     iscuda = True
 
         model.train()
         optimizer.zero_grad()
@@ -383,17 +398,21 @@ def main(ckpPath, trainDataloader, valDataloader, logger, savePath, resumePath=N
             total=len(data_loader), desc=f"Train epoch[{epoch}/{TRAIN_EPOCHS}]"
         )
         for idx, (samples, targets) in enumerate(data_loader):
-            if idx_o > 0:
-                idx = idx_o
-                continue
-            if iscuda:
-                samples = samples.cuda(non_blocking=True)
-                targets = targets.cuda(non_blocking=True)
+            # if idx_o > 0:
+            #     idx = idx_o
+            #     continue
+            # if iscuda:
+                # samples = samples.cuda(non_blocking=True)
+                # targets = targets.cuda(non_blocking=True)
+            samples = samples.to(device)
+            targets = targets.to(device)
             samples = samples.reshape([-1, 3, DATA_IMG_SIZE, DATA_IMG_SIZE])
-            if iscuda:
-                with torch.cuda.amp.autocast(enabled=AMP_ENABLE):
-                    outputs = model(samples, labels=targets)
-            else:
+            # if iscuda:
+            #     with torch.cuda.amp.autocast(enabled=AMP_ENABLE):
+            #         outputs = model(samples, labels=targets)
+            # else:
+            #     outputs = model(samples, labels=targets)
+            with torch.cuda.amp.autocast(enabled=AMP_ENABLE):
                 outputs = model(samples, labels=targets)
             loss = outputs.loss
             loss_meter.update(loss.item(), targets.size(0))
@@ -478,11 +497,11 @@ def main(ckpPath, trainDataloader, valDataloader, logger, savePath, resumePath=N
         epoch = epoch
         SAVE_FREQ = 0
 
-        # Testcriterion = torch.nn.CrossEntropyLoss()
-        iscuda = False
-        if device.type == "cuda":
-            model = model.cuda()
-            iscuda = True
+        # # Testcriterion = torch.nn.CrossEntropyLoss()
+        # iscuda = False
+        # if device.type == "cuda":
+        #     model = model.cuda()
+        #     iscuda = True
 
         model.eval()
 
@@ -648,7 +667,7 @@ if __name__ == "__main__":
     # MODEL_SWINV2_APE = False
     # MODEL_SWINV2_PATCH_NORM = True
 
-    CHK_SAVE_STEP = int(5)
+    CHK_SAVE_STEP = int(1)
     NUM_WORKERS = int(5)
 
     args = parse_option()
@@ -657,13 +676,13 @@ if __name__ == "__main__":
     #     if torch.cuda.device_count() > 1:
     #         for i in range(1, torch.cuda.device_count()):
     #             os.environ["CUDA_VISIBLE_DEVICES"] += ',%d'%i
-    if args.devices:
-        os.environ["CUDA_VISIBLE_DEVICES"] = args.devices
+    # if args.devices:
+    #     os.environ["CUDA_VISIBLE_DEVICES"] = args.devices
         # TRAIN_ACCUMULATION_STEPS = 0
         # for i in args.devices.split(','):
         #     if i:
         #         TRAIN_ACCUMULATION_STEPS += 1
-
+    DATA_DIR = './dataset'
     if args.batch_size:
         DATA_BATCH_SIZE = args.batch_size
     if args.train_epochs:
@@ -678,6 +697,8 @@ if __name__ == "__main__":
         OUTPUT_DIR = args.output_dir
     if args.resume_from:
         TRAIN_RESUME_FROM = args.resume_from
+    if args.save_step:
+        CHK_SAVE_STEP = args.save_step
     DATA_INDEX_UPDATE = args.update_data_index
 
     print(args)

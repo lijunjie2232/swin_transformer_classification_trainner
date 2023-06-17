@@ -7,7 +7,7 @@ from utils import readImage
 import numpy as np
 
 class MyDataset(Dataset):
-    def __init__(self, datasetPath, dataType='', fileNameForm=None, imageProcessor=None, updateIndex=False, tag2label:map=None, tags:list=None, saveConfig=False, reSuffle=False):
+    def __init__(self, datasetPath, dataType='', fileNameForm=None, transform=None, updateIndex=False, tag2label:map=None, tags:list=None, saveConfig=False, reSuffle=False):
         """
         dataType: ['train', 'val', 'test']
         """
@@ -20,7 +20,7 @@ class MyDataset(Dataset):
         self.imageDataPath = os.path.join(datasetPath, 'images')
         assert os.path.isdir(self.imageDataPath)
         
-        self.imageProcessor = imageProcessor
+        self.transform = transform
         self.dataType = dataType
         
         self.tags = ['tent', 'car', 'truck', 'human', 'bridge', 'bg']
@@ -56,8 +56,8 @@ class MyDataset(Dataset):
         img = None
         try:
             img = readImage(imageFilePath)
-            if self.imageProcessor:
-                img = self.imageProcessor(img, return_tensors="pt")
+            if self.transform:
+                img = self.transform(img, return_tensors="pt")
                 img = img['pixel_values']
         except Exception as e:
             print(e)
@@ -118,7 +118,6 @@ class MyDataset(Dataset):
         # df.to_csv(os.path.join(path, 'metadata.csv'), index=False)
         # return df
         data_df = pd.read_csv(os.path.join(path, dataType+'.csv'))
-        print('update index of ', dataType, ' splits')
         for index, row in data_df.iterrows():
             data.append((row[1], os.path.abspath(os.path.join(imgPath, row[0], row[1])), self.tag2label[row[0]]))
         
