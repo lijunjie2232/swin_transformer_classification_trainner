@@ -6,3 +6,7 @@
 
 - Use huggingface transformer and model file, so it can change to any model else easily.
 
+
+SWTClassification.py: based on huggingface accelerate
+
+SWTClassification_dist.py: based on pytorch distributed
