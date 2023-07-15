@@ -259,7 +259,7 @@ def saveCheckpoint(
     #     if epoch % SAVE_FREQ == 0 or epoch == TRAIN_EPOCHS:
     #         torch.save(save_state, saveEpochPath)
     saveEpochPath = os.path.join(path, f"ckpt_epoch_{epoch}.pth")
-    if (epoch % SAVE_FREQ == SAVE_FREQ or epoch == TRAIN_EPOCHS) and idx == -1 or ignore_step:
+    if (epoch % SAVE_FREQ == SAVE_FREQ-1 or epoch == TRAIN_EPOCHS-1) and idx == -1 or ignore_step:
         torch.save(dict_states, saveEpochPath)
         logger.info('saved ckpt: ', saveEpochPath)
     if latest:
