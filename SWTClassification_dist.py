@@ -13,6 +13,7 @@ import argparse
 import numpy as np
 from logger import create_logger
 
+import yaml
 
 # from concurrent import futures
 # from xml.dom.minidom import parse
@@ -37,7 +38,7 @@ import torch.distributed as dist
 
 
 # from swin_transformer_v2 import SwinTransformerV2
-from accelerate import Accelerator
+# from accelerate import Accelerator
 from MyDataset import MyDataset
 from utils import pathChecker, reduce_tensor, NativeScalerWithGradNormCount
 
@@ -69,7 +70,7 @@ TRAIN_RESUME_FROM = None
 TEST_SHUFFLE = False
 
 MODEL_TYPE = "swinv2"
-MODEL_NAME = "swinv2-small-patch4-window8-256"
+MODEL_NAME = "swinv2-unknown"
 MODEL_DROP_PATH_RATE = 0.2
 MODEL_NUM_CLASSES = 1000
 MODEL_DROP_PATH_RATE = 0.1
@@ -141,6 +142,11 @@ def parse_option():
         type=int,
         default=5,
         help="resume from an output dir or a model weight file"
+    )
+    parser.add_argument(
+        "--data_img_size",
+        type=int,
+        default=192,
     )
     parser.add_argument('-g', '--gpus', default=1, type=int,
                         help='number of gpus per node')
@@ -645,7 +651,23 @@ if __name__ == "__main__":
         TRAIN_RESUME_FROM = args.resume_from
     if args.save_step:
         SAVE_FREQ = args.save_step
+    if args.data_img_size:
+        DATA_IMG_SIZE=args.data_img_size
     DATA_INDEX_UPDATE = args.update_data_index
+    
+    # image_size
+    # window_size
+    configPath = os.path.join(args.model_dir, 'config.json')
+    CONFIG = None
+    if os.path.isfile(configPath):
+        with open(configPath, 'r', encoding='utf8') as f:
+            CONFIG = yaml.safe_load(f)
+    if CONFIG:
+        configKeys = CONFIG.keys()
+        if 'window_size' in configKeys:
+            MODEL_SWINV2_WINDOW_SIZE = CONFIG['window_size']
+        if 'img_size' in configKeys:
+            DATA_IMG_SIZE = CONFIG['image_size']
 
     if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
         args.rank = int(os.environ["RANK"])
