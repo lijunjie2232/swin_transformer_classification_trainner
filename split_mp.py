@@ -160,7 +160,7 @@ if __name__ == '__main__':
     parser.add_argument('--val', type=int, default=0, help="val のパーセント")
     parser.add_argument('--make_index', default=False, action='store_true', help="make index of absolute path for training")
     parser.add_argument('--p', type=int, default=4, help="parr_num")
-    parser.add_argument('--check_img', default=False, help="check if image is corrupt")
+    parser.add_argument('--check_img', default=False, action='store_true', help="check if image is corrupt")
     args = parser.parse_args()
     DATA_PATH = args.data_path
     CHECK_IMG = args.check_img
