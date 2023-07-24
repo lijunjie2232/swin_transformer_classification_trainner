@@ -27,9 +27,9 @@ def make_row():
         try:
             row = input_queue.get_nowait()
             path = os.path.abspath(os.path.join(IMG_PATH, row[0], row[1]))
-            if CHECK_IMG:
-                if imghdr.what(path):
-                    output_queue.put((row[1], path, TAG2LABEL[row[0]]))
+            if CHECK_IMG and not imghdr.what(path):
+                continue
+            output_queue.put((row[1], path, TAG2LABEL[row[0]]))
         except:
             break
 
