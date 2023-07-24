@@ -698,7 +698,7 @@ if __name__ == "__main__":
         output_dir=logPath, dist_rank=dist.get_rank(), name=f"{MODEL_NAME}.log", print2console=True)
     dist.barrier()
 
-    tags = ['car', 'truck', 'tank', 'armored_car', 'radar', 'artillery', 'person', 'bridge', 'building', 'airport', 'gb']
+    tags = ['car', 'truck', 'tank', 'armored_car', 'radar', 'artillery', 'person', 'bridge', 'building', 'airport', 'bg']
     tag2label = {tags[i]: i for i in range(len(tags))}
     label2tag = {i: tags[i] for i in range(len(tags))}
 
