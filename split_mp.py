@@ -4,7 +4,8 @@ import numpy as np
 import random
 from tqdm import tqdm
 import argparse
-from multiprocessing import Queue
+import multiprocessing as mp
+from multiprocessing import Process, Manager
 from threading import Thread
 import imghdr
 
@@ -19,11 +20,8 @@ output_queue = None
 IMG_PATH = None
 CHECK_IMG = True
 
-def make_row():
-    global input_queue
-    global output_queue
-    global CHECK_IMG
-    while True:
+def make_row(input_queue, output_queue, IMG_PATH, CHECK_IMG):
+    while not input_queue.empty():
         try:
             row = input_queue.get_nowait()
             path = os.path.abspath(os.path.join(IMG_PATH, row[0], row[1]))
@@ -32,38 +30,41 @@ def make_row():
                     output_queue.put((row[1], path, TAG2LABEL[row[0]]))
         except:
             break
+    return
 
 def make_index(p=4):
     global input_queue
     global output_queue
+    global CHECK_IMG
+    global IMG_PATH
     print('processes: ', p)
-    thread_list = []
+    process_list = []
     total = input_queue.qsize()
     progress = tqdm(total=total)
     for i in range(p):
-        t = Thread(target=make_row)
-        t.start()
-        thread_list.append(t)
+        p = Process(target=make_row, args=(input_queue, output_queue, IMG_PATH, CHECK_IMG))
+        p.start()
+        process_list.append(p)
     while not input_queue.empty():
         progress.n = output_queue.qsize()
         progress.refresh()
-    if total > progress.n:
-        progress.n = total
-        progress.refresh()
+    progress.n = total
+    progress.refresh()
     progress.close()
-    for t in thread_list:
-        t.join()
+    for p in process_list:
+        p.join()
 
     tmp_data = dump_queue(output_queue)
     return pd.DataFrame(data=tmp_data, columns = ['file_name', 'file_path', 'label'])
 
-def get_queue(set:list):
+def get_queue(dataset:list):
+    print('total %d in dataset'%len(dataset))
     global input_queue
-    for i in set:
+    for i in tqdm(dataset, desc='from input queue'):
         input_queue.put(i)
     # return input_queue
 
-def dump_queue(q:Queue):
+def dump_queue(q:mp.Queue):
     l = []
     global output_queue
     while not output_queue.empty():
@@ -122,8 +123,8 @@ def makeDataset(path='./', train:int=8, test:int=2, val:int=0, makeIndex=False, 
         tmp_df.to_csv(os.path.join(path, 'train.csv'), index=False)
         if makeIndex:
             print('making index of train ...')
-            input_queue = Queue()
-            output_queue = Queue()
+            input_queue = Manager().Queue()
+            output_queue = Manager().Queue()
             get_queue(trainSet)
             tmp_df = make_index(p)
             tmp_df.to_csv(os.path.join(path, 'train_metadata.csv'), index=False)
@@ -133,8 +134,8 @@ def makeDataset(path='./', train:int=8, test:int=2, val:int=0, makeIndex=False, 
         tmp_df.to_csv(os.path.join(path, 'test.csv'), index=False)
         if makeIndex:
             print('making index of test ...')
-            input_queue = Queue()
-            output_queue = Queue()
+            input_queue = Manager().Queue()
+            output_queue = Manager().Queue()
             get_queue(testSet)
             tmp_df = make_index(p)
             tmp_df.to_csv(os.path.join(path, 'test_metadata.csv'), index=False)
@@ -144,8 +145,8 @@ def makeDataset(path='./', train:int=8, test:int=2, val:int=0, makeIndex=False, 
         tmp_df.to_csv(os.path.join(path, 'val.csv'), index=False)
         if makeIndex:
             print('making index of val ...')
-            input_queue = Queue()
-            output_queue = Queue()
+            input_queue = Manager().Queue()
+            output_queue = Manager().Queue()
             get_queue(valSet)
             tmp_df = make_index(p)
             tmp_df.to_csv(os.path.join(path, 'val_metadata.csv'), index=False)
