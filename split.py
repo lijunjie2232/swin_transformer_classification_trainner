@@ -6,7 +6,7 @@ from tqdm import tqdm
 import argparse
 from multiprocessing import Pool
 
-TAGS = ['tent', 'car', 'truck', 'human', 'bridge', 'bg']
+TAGS = ['car', 'truck', 'tank', 'armored_car', 'radar', 'artillery', 'person', 'bridge', 'building', 'airport']
 TAG2LABEL = {TAGS[i]:i for i in range(len(TAGS))}
 DATA_PATH = './'
 TMP_DATAFRAME = None
