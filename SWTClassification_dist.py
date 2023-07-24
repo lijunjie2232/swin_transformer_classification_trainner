@@ -60,7 +60,7 @@ TRAIN_WARMUP_EPOCHS = 2
 TRAIN_WARMUP_LR = 5e-7
 TRAIN_WEIGHT_DECAY = 0.05
 TRAIN_BASE_LR = 1e-5
-TRAIN_MIN_LR = 1e-7
+TRAIN_MIN_LR = 1e-8
 TRAIN_OPTIMIZER_BETAS = (0.9, 0.999)
 TRAIN_LR_SCHEDULER_DECAY_EPOCHS = int(30)
 TRAIN_LR_SCHEDULER_MULTISTEPS = []
@@ -307,7 +307,7 @@ def train_one_epoch(model, criterion, data_loader, optimizer, epoch, mixup_fn, l
     for idx, (samples, targets) in enumerate(data_loader):
         samples = samples.cuda(non_blocking=True)
         targets = targets.cuda(non_blocking=True)
-        samples = samples.reshape([-1, 3, DATA_IMG_SIZE, DATA_IMG_SIZE])
+        samples = samples.reshape([-1, 3, 256, 256])
 
         if mixup_fn is not None:
             samples, targets = mixup_fn(samples, targets)
@@ -666,8 +666,16 @@ if __name__ == "__main__":
         configKeys = CONFIG.keys()
         if 'window_size' in configKeys:
             MODEL_SWINV2_WINDOW_SIZE = CONFIG['window_size']
-        if 'img_size' in configKeys:
-            DATA_IMG_SIZE = CONFIG['image_size']
+    
+    PP_CONFIG = None      
+    preprocessor_config_path = os.path.join(args.model_dir, 'config.json')
+    if os.path.isfile(preprocessor_config_path):
+        with open(preprocessor_config_path, 'r', encoding='utf8') as f:
+            PP_CONFIG = yaml.safe_load(f)
+    if PP_CONFIG:
+        pp_configKeys = PP_CONFIG.keys()
+        if 'size' in pp_configKeys:
+            DATA_IMG_SIZE = PP_CONFIG['size']
 
     if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
         args.rank = int(os.environ["RANK"])
@@ -689,6 +697,7 @@ if __name__ == "__main__":
 
     # 设置路径
     # runName = re.sub('[&/:*?"<>| ]', "_", time.ctime())
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
     logPath = os.path.join(OUTPUT_DIR, 'log')
     chkPath = os.path.join(OUTPUT_DIR, 'chk')
     pathChecker(logPath)

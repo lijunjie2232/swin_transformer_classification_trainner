@@ -5,30 +5,25 @@ import random
 from tqdm import tqdm
 import argparse
 from multiprocessing import Pool
+import imghdr
 
 TAGS = ['car', 'truck', 'tank', 'armored_car', 'radar', 'artillery', 'person', 'bridge', 'building', 'airport', 'bg']
 TAG2LABEL = {TAGS[i]:i for i in range(len(TAGS))}
 DATA_PATH = './'
 TMP_DATAFRAME = None
+CHECK_IMG = True
 
-def make_row(imgPath, row):
-    return (row[1], os.path.abspath(os.path.join(imgPath, row[0], row[1])), TAG2LABEL[row[0]])
-# def make_row(imgPath, row_num, tmp_df):
-#     row = tmp_df.iloc[row_num]
-#     return (row[1], os.path.abspath(os.path.join(imgPath, row[0], row[1])), TAG2LABEL[row[0]])
 
-def make_index(tmp_df, imgPath, p=4):
-    print('processes: ', p)
-    pool = Pool(p)
-    # global TMP_DATAFRAME
-    # TMP_DATAFRAME = tmp_df
-    # tmp_df = np.array(tmp_df).tolist()
-    tmp_data = pool.starmap(make_row, [(imgPath, row) for _, row in tmp_df.iterrows()])
-    # tmp_data = pool.starmap(make_row, [(imgPath, row_num, tmp_df) for row_num in range(0, tmp_df.shape[0])])
-    # tmp_data = pool.starmap(make_row, [(imgPath, row) for row in tmp_df])
+def make_index(tmp_df, imgPath):
+    tmp_data = []
+    for _, row in tqdm(tmp_df.iterrows(), total=tmp_df.shape[0]):
+        path = os.path.abspath(os.path.join(imgPath, row[0], row[1]))
+        if CHECK_IMG and not imghdr.what(path):
+            continue
+        tmp_data.append((row[1], path, TAG2LABEL[row[0]]))
     return pd.DataFrame(data=tmp_data, columns = ['file_name', 'file_path', 'label'])
 
-def makeDataset(path='./', train:int=8, test:int=2, val:int=0, makeIndex=False, p=4):
+def makeDataset(path='./', train:int=8, test:int=2, val:int=0, makeIndex=False):
     if not os.path.isdir(os.path.join(path, 'images')):
         print("invalid path")
     imgPath = os.path.join(path, 'images')
@@ -49,12 +44,12 @@ def makeDataset(path='./', train:int=8, test:int=2, val:int=0, makeIndex=False, 
     testSet = []
     valSet = []
 
-    for dirName, _, fileNames in os.walk(imgPath):
-        print(dirName)
+    for dirName, _, fileNames in tqdm(os.walk(imgPath), desc=imgPath):
+        # print(dirName)
         tag = os.path.split(dirName)[-1]
         if tag == '.ipynb_checkpoints':
             continue
-        fLoop = tqdm(fileNames, desc=dirName)
+        fLoop = tqdm(fileNames, desc=dirName, leave=False)
         for file in fLoop:
             try:
                 data = (tag, file)
@@ -77,7 +72,7 @@ def makeDataset(path='./', train:int=8, test:int=2, val:int=0, makeIndex=False, 
         tmp_df.to_csv(os.path.join(path, 'train.csv'), index=False)
         if makeIndex:
             print('making index of train ...')
-            tmp_df = make_index(tmp_df, imgPath, p)
+            tmp_df = make_index(tmp_df, imgPath)
             tmp_df.to_csv(os.path.join(path, 'train_metadata.csv'), index=False)
     if testSet:
         print('test: %d'%len(testSet))
@@ -85,7 +80,7 @@ def makeDataset(path='./', train:int=8, test:int=2, val:int=0, makeIndex=False, 
         tmp_df.to_csv(os.path.join(path, 'test.csv'), index=False)
         if makeIndex:
             print('making index of test ...')
-            tmp_df = make_index(tmp_df, imgPath, p)
+            tmp_df = make_index(tmp_df, imgPath)
             tmp_df.to_csv(os.path.join(path, 'test_metadata.csv'), index=False)
     if valSet:
         print('val: %d'%len(valSet))
@@ -93,7 +88,7 @@ def makeDataset(path='./', train:int=8, test:int=2, val:int=0, makeIndex=False, 
         tmp_df.to_csv(os.path.join(path, 'val.csv'), index=False)
         if makeIndex:
             print('making index of val ...')
-            tmp_df = make_index(tmp_df, imgPath, p)
+            tmp_df = make_index(tmp_df, imgPath)
             tmp_df.to_csv(os.path.join(path, 'val_metadata.csv'), index=False)
 
 
@@ -104,8 +99,9 @@ if __name__ == '__main__':
     parser.add_argument('--test', type=int, default=2, help="test のパ＿セント")
     parser.add_argument('--val', type=int, default=0, help="val のパーセント")
     parser.add_argument('--make_index', default=False, action='store_true', help="make index of absolute path for training")
-    parser.add_argument('--p', type=int, default=4, help="parr_num")
+    parser.add_argument('--check_img', default=False, action='store_true', help="check if image is corrupt")
     args = parser.parse_args()
     DATA_PATH = args.data_path
-    makeDataset(args.data_path, args.train, args.test, args.val, args.make_index, args.p)
+    CHECK_IMG = args.check_img
+    makeDataset(args.data_path, args.train, args.test, args.val, args.make_index)
 
