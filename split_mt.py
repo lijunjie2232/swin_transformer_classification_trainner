@@ -4,9 +4,10 @@ import numpy as np
 import random
 from tqdm import tqdm
 import argparse
-from multiprocessing import Pool
+from multiprosessing import Queue
+from threading import Thread
 
-TAGS = ['car', 'truck', 'tank', 'armored_car', 'radar', 'artillery', 'person', 'bridge', 'building', 'airport', 'bg']
+TAGS = ['car', 'truck', 'tank', 'armored_car', 'radar', 'artillery', 'person', 'bridge', 'building', 'airport']
 TAG2LABEL = {TAGS[i]:i for i in range(len(TAGS))}
 DATA_PATH = './'
 TMP_DATAFRAME = None

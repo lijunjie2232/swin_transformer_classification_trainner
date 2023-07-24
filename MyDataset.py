@@ -24,7 +24,7 @@ class MyDataset(Dataset):
         self.dataType = dataType
         
         #self.tags = ['tent', 'car', 'truck', 'human', 'bridge', 'bg']
-        self.tags =   ['car', 'truck', 'tank', 'armored_car', 'radar', 'artillery', 'person', 'bridge', 'building', 'airport']
+        self.tags =   ['car', 'truck', 'tank', 'armored_car', 'radar', 'artillery', 'person', 'bridge', 'building', 'airport', 'bg']
         self.sufList = ['.jpg', '.png']
         if tags:
             self.tags = tags
