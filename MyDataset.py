@@ -5,6 +5,8 @@ from tqdm import tqdm
 import re
 from utils import readImage
 import numpy as np
+import traceback
+
 
 class MyDataset(Dataset):
     def __init__(self, datasetPath, dataType='', fileNameForm=None, transform=None, updateIndex=False, tag2label:map=None, tags:list=None, saveConfig=False, reSuffle=False):
@@ -57,10 +59,14 @@ class MyDataset(Dataset):
         img = None
         try:
             img = readImage(imageFilePath)
+            #print("img shape:", img.shape)
             if self.transform:
                 img = self.transform(img, return_tensors="pt")
                 img = img['pixel_values']
         except Exception as e:
+            #print("bad image shape: ", img.shape)
+            #traceback.print_exc()
+            #exit(-1)
             print(e)
             return self.__getitem__(np.random.randint(0, self.dataIndex.shape[0], size=None, dtype='l'))
         tag = self.label2tag[label]

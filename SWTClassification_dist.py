@@ -307,7 +307,7 @@ def train_one_epoch(model, criterion, data_loader, optimizer, epoch, mixup_fn, l
     for idx, (samples, targets) in enumerate(data_loader):
         samples = samples.cuda(non_blocking=True)
         targets = targets.cuda(non_blocking=True)
-        samples = samples.reshape([-1, 3, 256, 256])
+        samples = samples.reshape([-1, 3, DATA_IMG_SIZE, DATA_IMG_SIZE])
 
         if mixup_fn is not None:
             samples, targets = mixup_fn(samples, targets)
@@ -668,7 +668,7 @@ if __name__ == "__main__":
             MODEL_SWINV2_WINDOW_SIZE = CONFIG['window_size']
     
     PP_CONFIG = None      
-    preprocessor_config_path = os.path.join(args.model_dir, 'config.json')
+    preprocessor_config_path = os.path.join(args.model_dir, 'preprocessor_config.json')
     if os.path.isfile(preprocessor_config_path):
         with open(preprocessor_config_path, 'r', encoding='utf8') as f:
             PP_CONFIG = yaml.safe_load(f)
