@@ -8,6 +8,7 @@ import multiprocessing as mp
 from multiprocessing import Process, Manager
 from threading import Thread
 import imghdr
+import cv2 as cv
 
 TAGS = ['car', 'truck', 'tank', 'armored_car', 'radar', 'artillery', 'person', 'bridge', 'building', 'airport', 'bg']
 TAG2LABEL = {TAGS[i]:i for i in range(len(TAGS))}
@@ -26,6 +27,9 @@ def make_row(input_queue, output_queue, IMG_PATH, CHECK_IMG):
             row = input_queue.get_nowait()
             path = os.path.abspath(os.path.join(IMG_PATH, row[0], row[1]))
             if CHECK_IMG and not imghdr.what(path):
+                continue
+            img = cv.imread(path)
+            if img.shapep[0] <= 1 or img.shape[1] <= 1:
                 continue
             output_queue.put((row[1], path, TAG2LABEL[row[0]]))
                 
